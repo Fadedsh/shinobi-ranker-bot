@@ -1,5 +1,4 @@
-// index.js
-require('dotenv').config(); // Load .env variables
+require("dotenv").config();
 const express = require("express");
 const { Client, GatewayIntentBits } = require("discord.js");
 
@@ -7,67 +6,77 @@ const app = express();
 app.use(express.json());
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
 });
 
-// ⚠️ TOKEN is now loaded from environment variables
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
-const GUILD_ID = process.env.GUILD_ID || "1433663714497925214"; // Optional to use env for server ID
+const GUILD_ID = process.env.GUILD_ID;
 
-// List of valid roles
-const roles = [
-    "Elite Jonin",
-    "Jonin",
-    "Rogue",
-    "Spec Jonin",
-    "Chunin",
-    "Genin",
-    "Academy Student"
+const rankRoles = [
+  "Elite Jonin",
+  "Jonin",
+  "Rogue",
+  "Spec Jonin",
+  "Chunin",
+  "Genin",
+  "Academy Student",
 ];
 
-client.once("ready", () => console.log(`Bot logged in as ${client.user.tag}`));
+const villageRoles = ["Leaf", "Cloud", "Mist", "Stone", "Sand", "Lunar", "Rain"];
+
+client.once("ready", () => console.log(`✅ Bot logged in as ${client.user.tag}`));
 
 app.post("/api/updateRank", async (req, res) => {
-    const { username, newRank } = req.body;
-    if (!username || !newRank) return res.sendStatus(400);
+  const { username, newRank, village, fullName } = req.body;
 
-    if (!roles.includes(newRank)) {
-        console.log(`Invalid role received: ${newRank}`);
-        return res.sendStatus(400);
+  if (!username || !newRank || !village || !fullName)
+    return res.status(400).json({ error: "Missing required fields" });
+
+  try {
+    const guild = await client.guilds.fetch(GUILD_ID);
+    await guild.members.fetch();
+
+    const member = guild.members.cache.find((m) =>
+      m.displayName.toLowerCase().includes(username.toLowerCase())
+    );
+
+    if (!member) {
+      console.log(`❌ No member found for ${username}`);
+      return res.sendStatus(404);
     }
 
-    try {
-        const guild = await client.guilds.fetch(GUILD_ID);
-        await guild.members.fetch();
-
-        // Find a member whose display name includes the Roblox username
-        const member = guild.members.cache.find(m =>
-            m.displayName.toLowerCase().includes(username.toLowerCase())
-        );
-
-        if (!member) {
-            console.log(`No Discord member found for ${username}`);
-            return res.sendStatus(404);
-        }
-
-        // Find the role by name
-        const role = guild.roles.cache.find(r => r.name === newRank);
-        if (!role) {
-            console.log(`No role found named ${newRank}`);
-            return res.sendStatus(404);
-        }
-
-        // Assign the role
-        await member.roles.add(role);
-        console.log(`Assigned ${newRank} to ${member.displayName}`);
-        res.sendStatus(200);
-
-    } catch (err) {
-        console.error("Error assigning role:", err);
-        res.sendStatus(500);
+    // 🏅 Rank Role
+    const rankRole = guild.roles.cache.find((r) => r.name === newRank);
+    if (rankRole && !member.roles.cache.has(rankRole.id)) {
+      await member.roles.add(rankRole);
+      console.log(`🏅 Added ${newRank} to ${member.displayName}`);
     }
+
+    // 🌍 Village Role (remove old one first)
+    const newVillageRole = guild.roles.cache.find((r) => r.name === village);
+    if (newVillageRole) {
+      const oldVillages = member.roles.cache.filter((r) =>
+        villageRoles.includes(r.name)
+      );
+      for (const [, role] of oldVillages) await member.roles.remove(role);
+      await member.roles.add(newVillageRole);
+      console.log(`🌍 Set ${member.displayName}'s village to ${village}`);
+    }
+
+    // 🪶 Nickname Update (e.g. "Tobi Mu (bababrrf4e)")
+    await member.setNickname(fullName).catch(() => {
+      console.log(`⚠️ Couldn't change nickname for ${username} (permissions?)`);
+    });
+
+    console.log(`✅ Updated ${username}: ${newRank}, ${village}, ${fullName}`);
+    return res.sendStatus(200);
+  } catch (err) {
+    console.error("❌ Error updating rank/village/nickname:", err);
+    return res.sendStatus(500);
+  }
 });
 
-// Start bot
 client.login(TOKEN);
-app.listen(process.env.PORT || 3000, () => console.log("Listening on port 3000"));
+app.listen(process.env.PORT || 3000, () =>
+  console.log(`🚀 Listening on port ${process.env.PORT || 3000}`)
+);
